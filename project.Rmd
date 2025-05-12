@@ -1,0 +1,307 @@
+---
+title: "Project"
+author: "Atharva Jadhav | Harshali Gaikwad | Sriujan Harihar"
+date: "2025-04-12"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(tseries)    
+library(forecast)   
+library(Metrics)
+library(ggplot2)
+library(tibble)
+library(scales)
+```
+
+**Part I: Data Loading**
+
+```{r}
+data = read.csv("pollution_us_2000_2016.csv")
+```
+
+```{r}
+data_df = data.frame(data)
+```
+
+**Part II: Data Cleaning**
+
+```{r}
+na_counts <- colSums(is.na(data_df)) # Find the number of NA values in each column
+print(na_counts)
+```
+
+```{r}
+cleaned_df <- data.frame(lapply(data_df, function(x) {
+  if (is.numeric(x)) {
+    x[is.na(x)] <- mean(x, na.rm = TRUE)
+  }
+  return(x)
+}))
+
+```
+
+```{r}
+na_counts <- colSums(is.na(cleaned_df))
+print(na_counts)
+```
+
+**Part III: Time Series \~ County - Cook**
+
+```{r}
+cleaned_df$Date.Local <- as.POSIXct(cleaned_df$Date.Local, format = "%Y-%m-%d")
+cleaned_df_cook <- subset(cleaned_df, County == "Cook")
+
+cleaned_df_cook_floored <- cleaned_df_cook %>%
+  mutate(YearMonth = floor_date(Date.Local, "month"))
+```
+
+```{r}
+monthly_data <- cleaned_df_cook_floored %>% 
+  group_by(YearMonth) %>%
+  summarise(mean_CO = mean(CO.Mean, na.rm = TRUE))
+```
+
+**1. Plot the Time Series for Cook**
+
+```{r}
+
+monthly_data$YearMonth <- as.Date(monthly_data$YearMonth)
+
+monthly_data_2004 <- monthly_data %>% 
+  filter(format(YearMonth, "%Y") == "2004")
+
+ggplot(monthly_data_2004, aes(x = YearMonth, y = mean_CO)) +
+  geom_line(color = "darkgreen") +
+  labs(title = "Monthly Average CO Values (Year 2004) Cook",
+       x = "Month",
+       y = "Mean CO") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +  # Show each month name
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+**2. Plot the Monthly Mean Time Series for Cook**
+
+```{r}
+start_year <- year(min(monthly_data$YearMonth))
+start_month <- month(min(monthly_data$YearMonth))
+ts_CO <- ts(monthly_data$mean_CO, start = c(start_year, start_month), frequency = 12)
+
+# Plot the time series
+plot(ts_CO, main = "Time Series of Monthly Mean CO - Cook", ylab = "Mean CO", xlab = "Time")
+
+```
+
+**3. Check for Stationarity using Augmented Dickey-Fuller Test**
+
+```{r}
+# Perform the Augmented Dickey-Fuller Test for stationarity.
+adf_test <- adf.test(ts_CO, alternative = "stationary")
+print(adf_test)
+```
+
+The data from the output of the Dickey-Fuller Test states that the data we have is not stationary. We will take care of it in the ARIMA model by differencing.
+
+**4. Find out the ACF and PACF**
+
+```{r}
+# Plot ACF and PACF for the series
+Acf(ts_CO, main = "ACF Plot - Cook")
+Pacf(ts_CO, main = "PACF Plot - Cook")
+
+#Plot the seasonal graph for checking the seasonality. 
+ggseasonplot(ts_CO, year.labels = TRUE)
+```
+
+Now using the above plot we see that there is seasonality for the year 2000 - 2004 and there is no seasonality seen for the rest of the years. Hence we split the time series fat 2004, and we take the years 2004 - 2013.
+
+```{r}
+ts_CO_partitioned <- window(ts_CO, start = c(2005, 1))
+adf_test <- adf.test(ts_CO_partitioned, alternative = "stationary")
+print(adf_test)
+
+ts_CO_partitioned_diff <- diff(ts_CO_partitioned)
+print(adf.test(ts_CO_partitioned_diff, alternative = "stationary"))
+
+```
+
+**5. Find out the ACF and PACF after differencing the data.**
+
+```{r}
+Acf(ts_CO_partitioned_diff, main = "ACF Plot of Differenced Partitioned Series- Cook")
+Pacf(ts_CO_partitioned_diff, main = "PACF Plot of Differenced Partitioned Series-  Cook")
+
+ggseasonplot(ts_CO_partitioned_diff,year.labels = TRUE, main = "Seasonal Subseries Plot")
+
+
+boxplot(ts_CO_partitioned_diff ~ cycle(ts_CO_partitioned_diff), xlab = "Month", ylab = "Mean CO", main = "Seasonal Boxplot - Cook")
+```
+
+**6. ARMA Model fitting to the Time Series Data**
+
+```{r}
+auto_model <- auto.arima(ts_CO_partitioned_diff, seasonal = FALSE)
+summary(auto_model)
+checkresiduals(auto_model)
+```
+
+**7. Forecasting and Model Evaluation for Cook**
+
+```{r}
+
+future_forecast <- forecast(auto_model, h = 12)
+autoplot(future_forecast)
+summary(future_forecast)
+
+```
+
+**Part IV: Time Series \~ Maricopa**
+
+```{r}
+
+cleaned_df_maricopa <- subset(cleaned_df, County == "Maricopa")
+
+cleaned_df_maricopa_floored <- cleaned_df_maricopa %>%
+  mutate(YearMonth = floor_date(Date.Local, "month"))
+
+```
+
+```{r}
+
+monthly_data_maricopa <- cleaned_df_maricopa_floored %>% 
+  group_by(YearMonth) %>%
+  summarise(mean_CO = mean(CO.Mean, na.rm = TRUE))
+
+```
+
+**1. Plot the Time Series for Maricopa**
+
+```{r}
+
+monthly_data_maricopa$YearMonth <- as.Date(monthly_data_maricopa$YearMonth)
+
+monthly_data_maricopa_2004 <- monthly_data_maricopa %>% 
+  filter(format(YearMonth, "%Y") == "2004")
+
+ggplot(monthly_data_maricopa_2004, aes(x = YearMonth, y = mean_CO)) +
+  geom_line(color = "darkgreen") +
+  labs(title = "Monthly Average CO Values (Year 2004) Maricopa",
+       x = "Month",
+       y = "Mean CO") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +  # Show each month name
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+**2. Plot the Monthly Mean Time Series for Maricopa**
+
+```{r}
+start_year_mc <- year(min(monthly_data_maricopa$YearMonth))
+start_month_mc <- month(min(monthly_data_maricopa$YearMonth))
+ts_CO_mc <- ts(monthly_data_maricopa$mean_CO, start = c(start_year_mc, start_month_mc), frequency = 12)
+
+# Plot the time series
+plot(ts_CO_mc, main = "Time Series of Monthly Mean CO Maricopa", ylab = "Mean CO", xlab = "Time")
+```
+
+**3. Check for Stationarity using Augmented Dickey-Fuller Test**
+
+```{r}
+# Perform the Augmented Dickey-Fuller Test for stationarity.
+
+adf_test_mc <- adf.test(ts_CO_mc, alternative = "stationary")
+print(adf_test_mc)
+```
+
+Since the data is already stationary according to the p-value which is 0.01, hence plotting now ACF and PACF
+
+**4. Find out the ACF and PACF for Maricopa**
+
+```{r}
+# Plot ACF and PACF for the series
+
+Acf(ts_CO_mc, main = "ACF Plot - Maricopa")
+Pacf(ts_CO_mc, main = "PACF Plot - Maricopa")
+
+
+```
+
+**5. Checking for Seasonality of Time Series Data for Maricopa**
+
+```{r}
+
+ggseasonplot(ts_CO_mc, year.labels = TRUE)
+```
+
+Since the data is stationary and the data is seasonal we are using SARIMA model.
+
+**6. SARIMA Model fitting to the Time Series Data for Maricopa**
+
+```{r}
+auto_model_mc <- auto.arima(ts_CO_mc, seasonal = TRUE)
+summary(auto_model_mc)
+checkresiduals(auto_model_mc)
+```
+
+**7. Forecasting and Model Evaluation for Maricopa**
+
+```{r}
+
+future_forecast_mc <- forecast(auto_model_mc, h = 12)
+autoplot(future_forecast_mc)
+summary(future_forecast_mc)
+
+```
+
+**Part V: Comparison ~ Cook and Maricopa (2000)**
+
+```{r}
+resid1 <- residuals(auto_model)
+resid2 <- residuals(auto_model_mc)
+
+min_len <- min(length(resid1), length(resid2))
+
+# Trim both residuals to that length
+resid1_trim <- resid1[1:min_len]
+resid2_trim <- resid2[1:min_len]
+time_vals <- time(resid1)[1:min_len]  # assuming both have same time index structure
+
+# Now create the tibble
+df_resid <- tibble::tibble(
+  Time = time_vals,
+  CountyCook = as.numeric(resid1_trim),
+  CountyMaricopa = as.numeric(resid2_trim)
+)
+
+# Reshape for plotting
+df_long <- tidyr::pivot_longer(df_resid, cols = c(CountyCook, CountyMaricopa),
+                                names_to = "County", values_to = "Residual")
+
+# Plot
+library(ggplot2)
+ggplot(df_long, aes(x = Time, y = Residual, color = County)) +
+  geom_line() +
+  labs(title = "Residuals Comparison by County",
+       x = "Time", y = "Residuals") +
+  theme_minimal()
+
+df_density <- data.frame(
+  Residual = c(resid1_trim, resid2_trim),
+  County = rep(c("Cook County", "Maricopa County"), each = length(resid1_trim))
+)
+
+ggplot(df_density, aes(x = Residual, fill = County)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Residual Distribution by County") +
+  theme_minimal()
+```
