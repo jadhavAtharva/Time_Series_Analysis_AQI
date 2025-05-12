@@ -6,9 +6,9 @@ This project applies advanced time series modeling to forecast the Air Quality I
 
 ## Team
 
-- **Atharva Jadhav** (ajadhav16@hawk.iit.edu)
-- **Harshali Gaikwad** (hgaikwad@hawk.iit.edu)
-- **Sriujan Harihar** (harihar1@hawk.iit.edu)  
+- **Atharva Jadhav**
+- **Harshali Gaikwad** 
+- **Sriujan Harihar**   
 - **Instructor**: Prof. Stasi Despina
 
 ## Project Goals
